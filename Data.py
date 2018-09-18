@@ -1,15 +1,24 @@
 # coding=utf-8
 import Model
 import sqlite3
-import datetime
 
 
 class DataService(object):
+    """
+    数据层接口，不同数据库可分别实现
+    """
 
     def save_account(self, account: Model.Account):
         """
         保存一个公众号信息（若不存在则更新）
         :param account: 公众号对象
+        """
+        pass
+
+    def save_msg(self, msg: Model.Msg):
+        """
+        保存一篇文章（若不存在则更新）
+        :param msg:
         """
         pass
 
@@ -20,13 +29,49 @@ class SqlLiteImpl(DataService):
         # 建立数据库连接
         self.conn = sqlite3.connect('weixin.db')
 
-    def save_account(self, account: Model.Account):
+    @staticmethod
+    def insert_sql(obj: object, table_name) -> (str, tuple):
+        """
+        返回插入语句及参数
+        :param obj: 待插入对象
+        :param table_name: 表名
+        :return: (str, tuple) sql语句, 参数
+        """
+        attrs = [x for x in dir(obj) if x[0] != '_']
+        sql = "INSERT INTO " + table_name + "(" + ",".join(attrs) + ")" + " VALUES (" + ",".join(
+            ['?'] * len(attrs)) + ");"
+        params = tuple((getattr(obj, x) for x in attrs))
+        return sql, params
+
+    @staticmethod
+    def update_sql(obj: object, table_name) -> (str, tuple):
+        """
+        返回更新语句及参数
+        :param obj: 待更新对象
+        :param table_name: 表名
+        :return: (str, tuple) sql语句, 参数
+        """
+        attrs = [x for x in dir(obj) if x[0] != '_']
+        sql = "UPDATE " + table_name + " SET " + " = ?, ".join(attrs) + " = ?;"
+        params = tuple((getattr(obj, x) for x in attrs))
+        return sql, params
+
+    def save_object(self, obj: object, table_name: str, unique_key: str) -> None:
+        """
+        根据一个主键保存一个对象
+        :param obj: 待保存对象
+        :param table_name:
+        :param unique_key:
+        :return:
+        """
         c = self.conn.cursor()
-        cursor = c.execute("SELECT * FROM account WHERE biz = (?);", (account.biz,))
-        if cursor.rowcount == 0:
-            c.execute("INSERT INTO account(biz, nickname, description, head_image) VALUES (?, ?, ?, ?);"
-                      , (account.biz, account.nickname, account.description, account.head_image))
-        else:
-            c.execute("UPDATE account SET nickname = ?, description = ?, head_image = ?, updated_time = ?;"
-                      , (account.nickname, account.description, account.head_image, datetime.datetime.now()))
+        cursor = c.execute("SELECT * FROM %s WHERE %s = (?);" % (table_name, unique_key), (getattr(obj, unique_key),))
+        sql, params = self.insert_sql(obj, table_name) if cursor.rowcount == 0 else self.update_sql(obj, table_name)
+        c.execute(sql, params)
         self.conn.commit()
+
+    def save_account(self, account: Model.Account):
+        self.save_object(account, 'account', 'biz')
+
+    def save_msg(self, msg: Model.Msg):
+        self.save_object(msg, 'msg', 'sn')
