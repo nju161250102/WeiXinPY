@@ -44,15 +44,18 @@ class SqlLiteImpl(DataService):
         return sql, params
 
     @staticmethod
-    def update_sql(obj: object, table_name) -> (str, tuple):
+    def update_sql(obj: object, table_name, unique_key) -> (str, tuple):
         """
         返回更新语句及参数
         :param obj: 待更新对象
         :param table_name: 表名
+        :param unique_key: 主键名
         :return: (str, tuple) sql语句, 参数
         """
         attrs = [x for x in dir(obj) if x[0] != '_']
-        sql = "UPDATE " + table_name + " SET " + " = ?, ".join(attrs) + " = ?;"
+        attrs.remove(unique_key)
+        sql = "UPDATE " + table_name + " SET " + " = ?, ".join(attrs) + " = ? WHERE " + unique_key + " = (?);"
+        attrs.append(unique_key)
         params = tuple((getattr(obj, x) for x in attrs))
         return sql, params
 
@@ -65,8 +68,8 @@ class SqlLiteImpl(DataService):
         :return:
         """
         c = self.conn.cursor()
-        cursor = c.execute("SELECT * FROM %s WHERE %s = (?);" % (table_name, unique_key), (getattr(obj, unique_key),))
-        sql, params = self.insert_sql(obj, table_name) if cursor.rowcount == 0 else self.update_sql(obj, table_name)
+        c.execute("SELECT * FROM " + table_name + " WHERE " + unique_key + "=?;", (getattr(obj, unique_key),))
+        sql, params = self.insert_sql(obj, table_name) if c.fetchone() is None else self.update_sql(obj, table_name, unique_key)
         c.execute(sql, params)
         self.conn.commit()
 
