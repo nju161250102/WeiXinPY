@@ -1,10 +1,15 @@
 # coding=utf-8
 import re
 import json
+import queue
 import datetime
+import threading
 from mitmproxy import http
 from mitmproxy import ctx
 from Data import *
+
+msg_queue = queue.Queue()
+msg_lock = threading.Lock()
 
 
 class Rules(object):
@@ -45,11 +50,12 @@ class Rules(object):
             time_stamp = obj["comm_msg_info"]["datetime"]
             # 处理主图文消息
             app_msg = obj["app_msg_ext_info"]
-            if app_msg.has_keys('del_flag') and app_msg["del_flag"] == 1:
-                msg = self.parse_article(app_msg, time_stamp)
+            if 'del_flag' in app_msg.keys() and app_msg["del_flag"] == 1:
+                self._data_service.save_msg(self.parse_article(app_msg, time_stamp))
+
             if app_msg["is_multi"] == 1:
                 for item in app_msg["multi_app_msg_item_list"]:
-                    msg = self.parse_article(item, time_stamp)
+                    self._data_service.save_msg(self.parse_article(item, time_stamp))
 
         scroll_js = '''
         <script type="text/javascript">
@@ -101,3 +107,26 @@ class Rules(object):
         msg.copyright_stat = app_msg["copyright_stat"]
         msg.updated_time = datetime.datetime.now()
         return msg
+
+    def run(self):
+        global msg_queue, msg_lock
+        ctx.log("start")
+        while (not msg_queue.empty()) and msg_lock.acquire():
+            ctx.log("get")
+            self._data_service.save_msg(msg_queue.get())
+            msg_lock.release()
+
+
+class SaveMsgThread(threading.Thread):
+
+    def __int__(self):
+        threading.Thread.__init__(self)
+        ctx.log("start")
+        self._data_service: DataService = SqlLiteImpl()
+
+    def run(self):
+        global msg_queue, msg_lock
+        while msg_lock.acquire() and not msg_queue.empty():
+            ctx.log("get")
+            self._data_service.save_msg(msg_queue.get())
+            msg_lock.release()
