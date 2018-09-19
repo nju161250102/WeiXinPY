@@ -1,20 +1,21 @@
 # coding=utf-8
 import re
 import json
+import time
 import queue
 import datetime
 import threading
 from mitmproxy import http
-from mitmproxy import ctx
 from Data import *
-
-msg_queue = queue.Queue()
-msg_lock = threading.Lock()
 
 
 class Rules(object):
 
     def __init__(self):
+        self.msg_queue = queue.Queue()
+        self.msg_lock = threading.Lock()
+        self.t = threading.Thread(target=self._run, daemon=True)
+        self.t.start()
         # 打开用于替换的图片
         self._img = open("1.png", "rb").read()
         # 初始化数据层
@@ -44,19 +45,9 @@ class Rules(object):
         self._data_service.save_account(account)
         # 历史消息处理
         msg_list = re.search(r"var msgList = '(.+)';", text, re.M).group(1)
-        msg_list = self.remove_escapes(msg_list)
+        msg_list = self._remove_escapes(msg_list)
         json_object = json.loads(msg_list, encoding='utf-8')
-        for obj in json_object["list"]:
-            time_stamp = obj["comm_msg_info"]["datetime"]
-            # 处理主图文消息
-            app_msg = obj["app_msg_ext_info"]
-            if 'del_flag' in app_msg.keys() and app_msg["del_flag"] == 1:
-                self._data_service.save_msg(self.parse_article(app_msg, time_stamp))
-
-            if app_msg["is_multi"] == 1:
-                for item in app_msg["multi_app_msg_item_list"]:
-                    self._data_service.save_msg(self.parse_article(item, time_stamp))
-
+        self._parse_article_list(json_object["list"])
         scroll_js = '''
         <script type="text/javascript">
             var end = document.createElement("p");
@@ -83,14 +74,40 @@ class Rules(object):
             f.write(text)
 
     @staticmethod
-    def remove_escapes(s: str) -> str:
+    def _remove_escapes(s: str) -> str:
+        """
+        去除字符串中的各种转义字符
+        :param s: 待处理字符串
+        :return: 处理结果
+        """
         replace_dict = {'lt': '<', 'gt': '>', 'nbsp': ' ', 'amp': '&', 'quot': '"'}
         s = re.sub(r'&(lt|gt|nbsp|amp|quot);', lambda matched: replace_dict[matched.group(1)], s)
         s = s.replace(r'\"', '"').replace(r'\\/', '/')
         return s
 
+    def _parse_article_list(self, json_list):
+        """
+        解析文章列表的json
+        :param json_list: 文章列表json
+        """
+        for obj in json_list:
+            time_stamp = obj["comm_msg_info"]["datetime"]
+            # 处理主图文消息
+            app_msg = obj["app_msg_ext_info"]
+            if 'del_flag' in app_msg.keys() and app_msg["del_flag"] == 1:
+                self._put_msg(self._parse_article(app_msg, time_stamp))
+            # 处理多图文消息
+            if app_msg["is_multi"] == 1:
+                for item in app_msg["multi_app_msg_item_list"]:
+                    self._put_msg(self._parse_article(item, time_stamp))
+
     @staticmethod
-    def parse_article(app_msg, time_stamp):
+    def _parse_article(app_msg, time_stamp):
+        """
+        解析一篇文章的json
+        :param app_msg: 单条消息json
+        :param time_stamp: 发布时间(时间戳)
+        """
         msg = Model.Msg()
         msg.title = app_msg["title"]
         msg.digest = app_msg["digest"]
@@ -108,25 +125,22 @@ class Rules(object):
         msg.updated_time = datetime.datetime.now()
         return msg
 
-    def run(self):
-        global msg_queue, msg_lock
-        ctx.log("start")
-        while (not msg_queue.empty()) and msg_lock.acquire():
-            ctx.log("get")
-            self._data_service.save_msg(msg_queue.get())
-            msg_lock.release()
+    def _run(self):
+        """
+        数据库存储进程，用于存储抓取的历史消息
+        """
+        data_service = SqlLiteImpl()  # SQLlite连接只能在创建的线程中使用
+        while True:
+            time.sleep(0.1)
+            while (not self.msg_queue.empty()) and self.msg_lock.acquire():
+                data_service.save_msg(self.msg_queue.get())
+                self.msg_lock.release()
 
-
-class SaveMsgThread(threading.Thread):
-
-    def __int__(self):
-        threading.Thread.__init__(self)
-        ctx.log("start")
-        self._data_service: DataService = SqlLiteImpl()
-
-    def run(self):
-        global msg_queue, msg_lock
-        while msg_lock.acquire() and not msg_queue.empty():
-            ctx.log("get")
-            self._data_service.save_msg(msg_queue.get())
-            msg_lock.release()
+    def _put_msg(self, msg):
+        """
+        向历史消息队列中增加消息
+        :param msg: 等待放入历史消息队列的消息
+        """
+        if self.msg_lock.acquire():
+            self.msg_queue.put(msg)
+            self.msg_lock.release()
