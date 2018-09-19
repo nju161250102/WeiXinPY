@@ -22,12 +22,14 @@ class Msg(object):
         self.read_num = None  # 阅读量
         self.like_num = None  # 点赞量
         self.reward_num = None  # 赞赏量
+        self.comment_num = None  # 评论数量
+        self.reward_flag = None  # 能否赞赏 0-否 1-能
+        self.comment_flag = None  # 能否评论 0-否 1-能
         self.idx = 0  # 消息序号
         self.biz = ''  # 公众号id
         self.mid = ''  # 消息id
         self.sn = ''  # 随机加密字符串，对于每条消息是唯一的
         self.source_url = ''  # 阅读原文链接地址
         self.cover = ''  # 封面图片地址
-        self.delete_flag = 0  # 是否被删除 0-已被删除
         self.copyright_stat = '',  # 版权信息
         self.updated_time = ''  # 记录更新时间
