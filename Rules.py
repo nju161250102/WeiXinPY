@@ -12,8 +12,11 @@ from Data import *
 class Rules(object):
 
     def __init__(self):
+        # 历史消息队列
         self.msg_queue = queue.Queue()
+        # 线程锁
         self.msg_lock = threading.Lock()
+        # 数据库存储线程
         self.t = threading.Thread(target=self._run, daemon=True)
         self.t.start()
         # 打开用于替换的图片
@@ -27,13 +30,19 @@ class Rules(object):
             '~u /mp/profile_ext\?action=getmsg & ~ts application/json': self.history_json
         }
 
-    # 替换历史消息列表中的图片
     def replace_image(self, flow: http.HTTPFlow) -> None:
+        """
+        替换历史消息列表中的图片
+        :param flow: http流
+        """
         flow.response.content = self._img
         flow.response.headers["content-type"] = "image/png"
 
-    # 处理历史消息列表（html格式）
     def history_html(self, flow: http.HTTPFlow) -> None:
+        """
+        处理历史消息列表（html格式）
+        :param flow: http流
+        """
         text = flow.response.text
         # 公众号信息处理
         account = Model.Account()
@@ -58,20 +67,23 @@ class Rules(object):
                 if (!loadMore.style.display) {
                     document.body.scrollIntoView();
                 } else {
-                    setTimeout(scrollDown,Math.floor(Math.random()*2000+1000));
+                    setTimeout(scrollDown,Math.floor(Math.random()*1000+1000));
                 }
             })();
         </script>'''
-        # text = text.replace("</body>", scroll_js + "\n</body>")
+        text = text.replace("</body>", scroll_js + "\n</body>")
         flow.response.set_text(text)
 
-    # 处理历史消息列表（json格式）
     def history_json(self, flow: http.HTTPFlow) -> None:
+        """
+        处理历史消息列表（json格式）
+        :param flow: http流
+        """
         text = flow.response.text
-        text = text.replace(r'\"', '"').replace(r'\\\/', '/')
-        with open('s.txt', 'a+', encoding='utf-8') as f:
-            f.write('\n')
-            f.write(text)
+        text = self._remove_escapes(text)
+        text = text.replace(r'"{', '{').replace(r'}"', '}')
+        json_object = json.loads(text, encoding='utf-8')
+        self._parse_article_list(json_object["general_msg_list"]["list"])
 
     @staticmethod
     def _remove_escapes(s: str) -> str:
