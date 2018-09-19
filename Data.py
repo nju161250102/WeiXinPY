@@ -22,12 +22,29 @@ class DataService(object):
         """
         pass
 
+    def get_msg(self, sn):
+        """
+        根据sm号获取一篇文章
+        :param sn: 文章url里的sn参数
+        :return: 从数据库取出的文章
+        """
+        pass
+
+    def get_blank_msg(self, biz):
+        """
+        获取公众号未抓取文章的sn列表
+        :param biz: 公众号id
+        :return: 文章的sn列表
+        """
+        pass
+
 
 class SqlLiteImpl(DataService):
 
     def __init__(self):
         # 建立数据库连接
         self.conn = sqlite3.connect('weixin.db')
+        self.conn.row_factory = sqlite3.Row
 
     @staticmethod
     def insert_sql(obj: object, table_name) -> (str, tuple):
@@ -59,6 +76,23 @@ class SqlLiteImpl(DataService):
         params = tuple((getattr(obj, x) for x in attrs))
         return sql, params
 
+    def get_one_object(self, obj: object, table_name: str, unique_key: str, unique_value: str):
+        """
+        根据unique键值获取一个唯一的row对象
+        :param obj: 等待填充的对象
+        :param table_name: 表名
+        :param unique_key: unique键
+        :param unique_value: unique键值
+        :return: 唯一对象（未找到返回None）
+        """
+        c = self.conn.cursor()
+        c.execute("SELECT * FROM " + table_name + " WHERE " + unique_key + "=?;", (unique_value,))
+        row = c.fetchone()
+        if row is None:
+            return None
+        for key in row.keys():
+            setattr(obj, key, row[key])
+
     def save_object(self, obj: object, table_name: str, unique_key: str) -> None:
         """
         根据一个主键保存一个对象
@@ -78,3 +112,16 @@ class SqlLiteImpl(DataService):
 
     def save_msg(self, msg: Model.Msg):
         self.save_object(msg, 'msg', 'sn')
+
+    def get_msg(self, sn):
+        msg = Model.Msg()
+        self.get_one_object(msg, 'msg', 'sn', sn)
+        return msg
+
+    def get_blank_msg(self, biz):
+        c = self.conn.cursor()
+        c.execute("SELECT sn FROM msg WHERE biz='" + biz + "' AND content ISNULL;")
+        sn_list = []
+        for row in c.fetchall():
+            sn_list.append(row[0])
+        return sn_list
