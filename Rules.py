@@ -3,6 +3,7 @@ import re
 import json
 import time
 import queue
+import random
 import datetime
 import threading
 from mitmproxy import http
@@ -23,11 +24,17 @@ class Rules(object):
         self._img = open("1.png", "rb").read()
         # 初始化数据层
         self._data_service: DataService = SqlLiteImpl()
+        # 存储需要跳转抓取的文章sn列表
+        self.sn_list = []
+        # sn列表游标
+        self.sn_p = -1
         # 过滤规则：过滤器表达式 -> function(self, flow)
         self.rules_dict = {
             '~u mmbiz.qpic.cn/mmbiz_jpg': self.replace_image,
             '~u /mp/profile_ext\?action=home & ~ts text/html': self.history_html,
-            '~u /mp/profile_ext\?action=getmsg & ~ts application/json': self.history_json
+            '~u /mp/profile_ext\?action=getmsg & ~ts application/json': self.history_json,
+            '~u /mp/getappmsgext': self.article_info,
+            '~u mp.weixin.qq.com/s\?__': self.article_content
         }
 
     def replace_image(self, flow: http.HTTPFlow) -> None:
@@ -85,6 +92,56 @@ class Rules(object):
         json_object = json.loads(text, encoding='utf-8')
         self._parse_article_list(json_object["general_msg_list"]["list"])
 
+    def article_info(self, flow: http.HTTPFlow) -> None:
+        """
+        提取文章其余信息
+        :param flow: http流
+        """
+        request_url = flow.request.headers["Referer"]
+        sn = re.search(r'sn=([a-z0-9]+)', request_url).group(1)
+        msg: Model.Msg = self._data_service.get_msg(sn)
+        text = flow.response.text
+        json_object = json.loads(text, encoding='utf-8')
+        msg.like_num = json_object["appmsgstat"]["like_num"]
+        msg.read_num = json_object["appmsgstat"]["read_num"]
+        msg.reward_num = json_object["reward_total_count"] if len(json_object["reward_head_imgs"]) > 0 else 0
+        msg.comment_num = json_object["comment_count"]
+        msg.reward_flag = json_object["user_can_reward"] if "user_can_reward" in json_object.keys() else 0
+        msg.comment_flag = json_object["comment_enabled"]
+        self._data_service.save_msg(msg)
+
+    def article_content(self, flow: http.HTTPFlow) -> None:
+        """
+        提取文章内容
+        :param flow: http流
+        """
+        text = flow.response.text
+        request_url = flow.request.url
+        if len(self.sn_list) == 0:
+            biz = re.search(r'__biz=([a-zA-Z0-9|=]+)', request_url).group(1)
+            self.sn_list = self._data_service.get_blank_msg(biz)
+        else:
+            # 取出文章并更新内容
+            content = ""
+            for t in re.findall(r'<p(.*?)>(.*?)</p>', text):
+                if t[1] == '<br />':
+                    t[1] = '\n'
+                content += t[1]
+            msg: Model.Msg = self._data_service.get_msg(self.sn_list[self.sn_p])
+            msg.content = content
+            msg.updated_time = datetime.datetime.now()
+            self._put_msg(msg)
+        self.sn_p += 1
+        # 如果还有等待抓取的文章，则设置下一跳的js
+        if self.sn_p < len(self.sn_list):
+            msg: Model.Msg = self._data_service.get_msg(self.sn_list[self.sn_p])
+            next_link = "https://mp.weixin.qq.com/s?__biz=%s&mid=%s&idx=%s&sn=%s#wechat" \
+                        % (msg.biz, msg.mid, msg.idx, msg.sn)
+            delay_time = int(random.random() * 2 + 1)
+            insert_meta = '<meta http-equiv="refresh" content="' + str(delay_time) + ';url=' + next_link + '" />'
+            text = text.replace('</title>', '</title>' + insert_meta)
+        flow.response.set_text(text)
+
     @staticmethod
     def _remove_escapes(s: str) -> str:
         """
@@ -132,7 +189,6 @@ class Rules(object):
         msg.sn = re.search(r'sn=([a-z0-9]+)', url).group(1)
         msg.source_url = app_msg["source_url"]
         msg.cover = app_msg["cover"]
-        msg.delete_flag = app_msg["del_flag"]
         msg.copyright_stat = app_msg["copyright_stat"]
         msg.updated_time = datetime.datetime.now()
         return msg
