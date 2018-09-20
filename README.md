@@ -12,7 +12,7 @@
 安装、配置数据库。本爬虫默认使用SQLlite数据库，如需使用其他数据库，请阅读下一小节。  
 * Step 2  
 使用pip安装mitmproxy，安装证书，设置代理，详见[mitmproxy文档](https://docs.mitmproxy.org/stable/)  
-* Step 3
+* Step 3  
 在终端中将当前目录切换至本文件夹，输入命令:mitmdump -s Main.py  
 * Step 4  
 从微信客户端进入历史消息查看页面时抓取公众号基本信息，自动向下翻页抓取历史文章的基本信息。  
@@ -43,4 +43,4 @@ mitmdump外接插件脚本，编写事件触发后的处理流程。
 
 ## Support  
 如果您觉得本项目对您有帮助，欢迎使用支付宝打赏作者以示支持。  
-![](doc/1.jpg)
+<img src="./doc/1.jpg" width="300" height="300"/>
