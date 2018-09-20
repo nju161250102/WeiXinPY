@@ -120,13 +120,23 @@ class Rules(object):
         if len(self.sn_list) == 0:
             biz = re.search(r'__biz=([a-zA-Z0-9|=]+)', request_url).group(1)
             self.sn_list = self._data_service.get_blank_msg(biz)
+            weixin_id = re.search(r'<span class="profile_meta_value">(.*?)</span>', text).group(1)
+            account = self._data_service.get_account(biz)
+            account.weixin_id = weixin_id
+            account.updated_time = datetime.datetime.now()
+            self._data_service.save_account(account)
         else:
             # 取出文章并更新内容
             content = ""
             for t in re.findall(r'<p(.*?)>(.*?)</p>', text):
-                if t[1] == '<br />':
-                    t[1] = '\n'
-                content += t[1]
+                line = self._remove_escapes(t[1])
+                if re.match(r'<br(.*?)>', line) is not None:
+                    line = '\n'
+                elif re.match(r'<img(.*?)/>', line) is not None:
+                    line = re.search(r'data-src="(.*?)" ', line).group(1) + '\n'
+                else:
+                    line = re.sub(r'<(.*?)>', '', line) + '\n'
+                content += line
             msg: Model.Msg = self._data_service.get_msg(self.sn_list[self.sn_p])
             msg.content = content
             msg.updated_time = datetime.datetime.now()

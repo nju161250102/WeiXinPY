@@ -22,6 +22,13 @@ class DataService(object):
         """
         pass
 
+    def get_account(self, biz):
+        """
+        根据biz号获取公众号
+        :param biz: biz
+        """
+        pass
+
     def get_msg(self, sn):
         """
         根据sm号获取一篇文章
@@ -112,6 +119,11 @@ class SqlLiteImpl(DataService):
 
     def save_msg(self, msg: Model.Msg):
         self.save_object(msg, 'msg', 'sn')
+
+    def get_account(self, biz):
+        account = Model.Account()
+        self.get_one_object(account, 'account', 'biz', biz)
+        return account
 
     def get_msg(self, sn):
         msg = Model.Msg()
