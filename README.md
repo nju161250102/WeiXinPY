@@ -1,13 +1,13 @@
 # 微信文章抓取爬虫
 
-### Introduction
+## Introduction
 基于mitmdump中间人代理工具，拦截微信客户端发送的http请求和响应，抓取微信公众号的数据、发布的文章内容、文章的相关数据，并保存至数据库中。  
 
-### Dependence
+## Dependence
 [python 3.x](https://www.python.org/downloads/)  
 [mitmproxy 4.0.4](https://mitmproxy.org/downloads/#4.0.4/)  
 
-### Usage
+## Usage
 * Step 1  
 安装、配置数据库。本爬虫默认使用SQLlite数据库，如需使用其他数据库，请阅读下一小节。  
 * Step 2  
@@ -19,7 +19,7 @@
 * Step 5  
 点击任意一篇文章进入文章浏览页面，之后将根据步骤一中**已抓取的文章**依次跳转，完成对内容以及其他数据的抓取。
 
-### Code
+## Code
 * Proxy  
 mitmdump外接插件脚本，编写事件触发后的处理流程。  
 * Rules  
@@ -31,16 +31,16 @@ mitmdump外接插件脚本，编写事件触发后的处理流程。
 * CreateDB  
 在当前位置创建一个sqllite数据库，使用其他数据库请参考其中的字段命名。**如果数据库文件已存在则会被覆盖。**  
 
-### Version
-#### v0.1 - update time: 2018.09.20
+## Version
+### v0.1 - update time: 2018.09.20
 * 抓取微信公众号基本数据
 * 抓取微信公众号文章内容等数据
 * 使用插入队列进行数据库操作
 
-### License
+## License
 **不得用于闭源软件以及商业用途**  
 [GNU GENERAL PUBLIC LICENSE v3](LICENSE)
 
-### Support  
+## Support  
 如果您觉得本项目对您有帮助，欢迎使用支付宝打赏作者以示支持。  
 ![](doc/1.jpg)
