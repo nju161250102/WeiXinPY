@@ -7,7 +7,7 @@ import random
 import datetime
 import threading
 from mitmproxy import http
-from Data import *
+from .Data import *
 
 
 class Rules(object):
@@ -52,7 +52,7 @@ class Rules(object):
         """
         text = flow.response.text
         # 公众号信息处理
-        account = Model.Account()
+        account = Account()
         account.biz = re.search(r'var __biz = "(.+)";', text, re.M).group(1)
         account.nickname = re.search(r'var nickname = "(.+)" ', text, re.M).group(1)
         account.description = re.search(r'<p class="profile_desc">(\s*)(.*)(\s*)</p>', text, re.M).group(2).strip()
@@ -99,7 +99,7 @@ class Rules(object):
         """
         request_url = flow.request.headers["Referer"]
         sn = re.search(r'sn=([a-z0-9]+)', request_url).group(1)
-        msg: Model.Msg = self._data_service.get_msg(sn)
+        msg: Msg = self._data_service.get_msg(sn)
         text = flow.response.text
         json_object = json.loads(text, encoding='utf-8')
         msg.like_num = json_object["appmsgstat"]["like_num"]
@@ -120,6 +120,7 @@ class Rules(object):
         if len(self.sn_list) == 0:
             biz = re.search(r'__biz=([a-zA-Z0-9|=]+)', request_url).group(1)
             self.sn_list = self._data_service.get_blank_msg(biz)
+            self.sn_p = -1
             weixin_id = re.search(r'<span class="profile_meta_value">(.*?)</span>', text).group(1)
             account = self._data_service.get_account(biz)
             account.weixin_id = weixin_id
@@ -137,14 +138,14 @@ class Rules(object):
                 else:
                     line = re.sub(r'<(.*?)>', '', line) + '\n'
                 content += line
-            msg: Model.Msg = self._data_service.get_msg(self.sn_list[self.sn_p])
+            msg: Msg = self._data_service.get_msg(self.sn_list[self.sn_p])
             msg.content = content
             msg.updated_time = datetime.datetime.now()
             self._put_msg(msg)
         self.sn_p += 1
         # 如果还有等待抓取的文章，则设置下一跳的js
         if self.sn_p < len(self.sn_list):
-            msg: Model.Msg = self._data_service.get_msg(self.sn_list[self.sn_p])
+            msg: Msg = self._data_service.get_msg(self.sn_list[self.sn_p])
             next_link = "https://mp.weixin.qq.com/s?__biz=%s&mid=%s&idx=%s&sn=%s#wechat" \
                         % (msg.biz, msg.mid, msg.idx, msg.sn)
             delay_time = int(random.random() * 2 + 1)
@@ -187,7 +188,7 @@ class Rules(object):
         :param app_msg: 单条消息json
         :param time_stamp: 发布时间(时间戳)
         """
-        msg = Model.Msg()
+        msg = Msg()
         msg.title = app_msg["title"]
         msg.digest = app_msg["digest"]
         msg.author = app_msg["author"]

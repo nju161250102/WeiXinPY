@@ -1,5 +1,5 @@
 # coding=utf-8
-import Model
+from .Model import *
 import sqlite3
 
 
@@ -8,14 +8,14 @@ class DataService(object):
     数据层接口，不同数据库可分别实现
     """
 
-    def save_account(self, account: Model.Account):
+    def save_account(self, account: Account):
         """
         保存一个公众号信息（若不存在则更新）
         :param account: 公众号对象
         """
         pass
 
-    def save_msg(self, msg: Model.Msg):
+    def save_msg(self, msg: Msg):
         """
         保存一篇文章（若不存在则更新）
         :param msg:
@@ -114,19 +114,19 @@ class SqlLiteImpl(DataService):
         c.execute(sql, params)
         self.conn.commit()
 
-    def save_account(self, account: Model.Account):
+    def save_account(self, account: Account):
         self.save_object(account, 'account', 'biz')
 
-    def save_msg(self, msg: Model.Msg):
+    def save_msg(self, msg: Msg):
         self.save_object(msg, 'msg', 'sn')
 
     def get_account(self, biz):
-        account = Model.Account()
+        account = Account()
         self.get_one_object(account, 'account', 'biz', biz)
         return account
 
     def get_msg(self, sn):
-        msg = Model.Msg()
+        msg = Msg()
         self.get_one_object(msg, 'msg', 'sn', sn)
         return msg
 
