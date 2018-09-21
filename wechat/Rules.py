@@ -1,12 +1,13 @@
 # coding=utf-8
 import re
 import json
-import time
 import queue
 import random
 import datetime
+import requests
 import threading
 from mitmproxy import http
+from requests.cookies import RequestsCookieJar
 from .Data import *
 
 
@@ -28,11 +29,16 @@ class Rules(object):
         self.sn_list = []
         # sn列表游标
         self.sn_p = -1
+        # 抓取历史列表json的cookie
+        self.cookie_jar = RequestsCookieJar()
+        # 抓取历史列表json的查询参数
+        self.query_param = {}
         # 过滤规则：过滤器表达式 -> function(self, flow)
         self.rules_dict = {
             '~u mmbiz.qpic.cn/mmbiz_jpg': self.replace_image,
             '~u /mp/profile_ext\?action=home & ~ts text/html': self.history_html,
-            '~u /mp/profile_ext\?action=getmsg & ~ts application/json': self.history_json,
+            '~u /mp/profile_ext\?action=urlcheck': self.url_check,
+            # '~u /mp/profile_ext\?action=getmsg & ~ts application/json': self.history_json,
             '~u /mp/getappmsgext': self.article_info,
             '~u mp.weixin.qq.com/s\?__': self.article_content
         }
@@ -44,6 +50,23 @@ class Rules(object):
         """
         flow.response.content = self._img
         flow.response.headers["content-type"] = "image/png"
+
+    def url_check(self, flow: http.HTTPFlow) -> None:
+        """
+        拦截urlcheck的参数
+        :param flow: http流
+        """
+        request_url = flow.request.url
+        self.query_param['uin'] = re.search(r'uin=(.*?)&', request_url).group(1)
+        self.query_param['key'] = re.search(r'key=(.*?)&', request_url).group(1)
+        self.query_param['appmsg_token'] = re.search(r'appmsg_token=(.*?)&', request_url).group(1)
+        self.query_param['pass_ticket'] = re.search(r'pass_ticket=(.*?)&', request_url).group(1)
+        self.query_param['action'] = 'getmsg'
+        self.query_param['f'] = 'json'
+        self.query_param['count'] = 10
+        self.query_param['offset'] = 10
+        t = threading.Thread(target=self._get_msg_json)
+        t.start()
 
     def history_html(self, flow: http.HTTPFlow) -> None:
         """
@@ -59,6 +82,13 @@ class Rules(object):
         account.head_image = re.search(r'var headimg = "(.+)" ', text, re.M).group(1)
         account.updated_time = datetime.datetime.now()
         self._data_service.save_account(account)
+        # cookie与查询参数保存
+        c = flow.response.cookies
+        self.cookie_jar.set('wap_sid2', c['wap_sid2'][0])
+        self.cookie_jar.set('wxuin', c['wxuin'][0])
+        self.cookie_jar.set('pass_ticket', c['pass_ticket'][0])
+        self.cookie_jar.set('wxtokenkey', '777')
+        self.query_param['__biz'] = account.biz
         # 历史消息处理
         msg_list = re.search(r"var msgList = '(.+)';", text, re.M).group(1)
         msg_list = self._remove_escapes(msg_list)
@@ -78,7 +108,7 @@ class Rules(object):
                 }
             })();
         </script>'''
-        text = text.replace("</body>", scroll_js + "\n</body>")
+        # text = text.replace("</body>", scroll_js + "\n</body>")
         flow.response.set_text(text)
 
     def history_json(self, flow: http.HTTPFlow) -> None:
@@ -173,6 +203,8 @@ class Rules(object):
         for obj in json_list:
             time_stamp = obj["comm_msg_info"]["datetime"]
             # 处理主图文消息
+            if "app_msg_ext_info" not in obj.keys():  # 排除其他消息
+                continue
             app_msg = obj["app_msg_ext_info"]
             if 'del_flag' in app_msg.keys() and app_msg["del_flag"] == 1:
                 self._put_msg(self._parse_article(app_msg, time_stamp))
@@ -210,7 +242,6 @@ class Rules(object):
         """
         data_service = SqlLiteImpl()  # SQLlite连接只能在创建的线程中使用
         while True:
-            time.sleep(0.1)
             while (not self.msg_queue.empty()) and self.msg_lock.acquire():
                 data_service.save_msg(self.msg_queue.get())
                 self.msg_lock.release()
@@ -223,3 +254,14 @@ class Rules(object):
         if self.msg_lock.acquire():
             self.msg_queue.put(msg)
             self.msg_lock.release()
+
+    def _get_msg_json(self):
+        while True:
+            r = requests.get('http://mp.weixin.qq.com/mp/profile_ext', cookies=self.cookie_jar, params=self.query_param)
+            text = self._remove_escapes(r.text)
+            text = text.replace(r'"{', '{').replace(r'}"', '}')
+            json_object = json.loads(text, encoding='utf-8')
+            self._parse_article_list(json_object["general_msg_list"]["list"])
+            if json_object["can_msg_continue"] == 0:
+                break
+            self.query_param['offset'] += 10
